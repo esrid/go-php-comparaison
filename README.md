@@ -36,6 +36,8 @@ A comprehensive cheat-sheet comparing Go and PHP (8.x) syntax — fundamentals, 
 * [First-Class Callables (PHP 8.1)](#first-class-callables-php-81)
 * [Readonly Properties (PHP 8.1+)](#readonly-properties-php-81)
 * [Constructor Promotion (PHP 8.0+)](#constructor-promotion-php-80)
+* [Property Hooks (PHP 8.4)](#property-hooks-php-84)
+* [Asymmetric Visibility (PHP 8.4)](#asymmetric-visibility-php-84)
 
 ---
 
@@ -173,7 +175,8 @@ include 'helpers.php';
 | **Complex** | `complex64`, `complex128` | no complex number type |
 | **Mixed** | `any` (alias `interface{}`) | `mixed` |
 | **Void** | (no return type) | `void` |
-| **Never** | no equivalent | `never` (function never returns) |
+| **Never** | no equivalent | `never` — function never returns (PHP 8.1+) |
+| **True / False** | no equivalent | `true`, `false` as standalone types (PHP 8.2+) |
 | **Iterable** | no equivalent | `iterable` (array or Traversable) |
 | **Callable** | `func(...)` type | `callable` |
 
@@ -184,6 +187,11 @@ var i int     // 0
 var f float64 // 0.0
 var s string  // ""
 var p *int    // nil
+
+// Go 1.21+ built-in min/max (work on any ordered type)
+m := min(3, 1, 4)    // 1
+m  = max(3, 1, 4)    // 4
+// Also: clear(m) zeroes all elements of a slice or map (Go 1.21+)
 ```
 
 ```php
@@ -231,12 +239,23 @@ function process(int|string $value): int|float { ... }
 // Intersection types (PHP 8.1+) — all types must be satisfied
 function log(Stringable&Countable $obj): void { ... }
 
-// Return type void and never
-function doNothing(): void {}
+// never return type (PHP 8.1+) — function throws or exits, never returns normally
 function fail(): never { throw new Exception("always throws"); }
+
+// true / false / null as standalone types (PHP 8.2+)
+function alwaysTrue(): true   { return true; }
+function alwaysFalse(): false { return false; }
+function alwaysNull(): null   { return null; }
+
+// DNF types — Disjunctive Normal Form (PHP 8.2+)
+// Intersection types wrapped in parentheses, combined with union
+function process((Countable&ArrayAccess)|null $value): void { ... }
 
 // mixed — any type, explicit opt-out of type checking
 function anything(mixed $x): mixed { return $x; }
+
+// Return type void (cannot return a value)
+function doNothing(): void {}
 
 // Typed properties (PHP 7.4+)
 class User {
@@ -432,6 +451,25 @@ enum Suit: string implements HasLabel {
     // Enums can have constants
     const DEFAULT = self::Hearts;
 }
+
+// Typed constants in enums (PHP 8.3+)
+enum Priority: int {
+    case Low    = 1;
+    case Medium = 2;
+    case High   = 3;
+
+    const int DEFAULT_VALUE = 1; // typed constant — PHP 8.3+
+}
+
+// Typed class constants also work in regular classes/interfaces/traits (PHP 8.3+)
+class Config {
+    public const string VERSION = '1.0.0';
+    public const int    MAX_RETRY = 3;
+}
+
+// Dynamic class constant access (PHP 8.3+)
+$name = 'VERSION';
+echo Config::{$name}; // '1.0.0'
 
 // Enums can be used in match expressions
 $suit = Suit::Hearts;
@@ -763,6 +801,17 @@ for msg := range ch {
     fmt.Println(msg)
 }
 
+// Range over integer — Go 1.22+: iterates 0..N-1
+for i := range 10 {
+    fmt.Println(i) // 0, 1, 2 … 9
+}
+
+// Range over iterator function — Go 1.23+
+// An iterator is a func(yield func(K, V) bool)
+// The iter package (Go 1.23) provides helpers
+import "iter"
+// slices.All, maps.All, slices.Values, etc. return iterators
+
 // Discard index or value
 for _, v := range s {}
 for i := range s    {}
@@ -815,7 +864,7 @@ foreach ($matrix as $row) {
 }
 ```
 
-> **Key difference:** Go has one loop construct (`for`) that covers all cases. PHP has four (`for`, `while`, `do...while`, `foreach`). Go ranges are type-safe and work on arrays, slices, maps, strings, and channels. PHP `foreach` works on arrays and `Traversable` objects.
+> **Key difference:** Go has one loop construct (`for`) that covers all cases. PHP has four (`for`, `while`, `do...while`, `foreach`). Go 1.22+ added `range N` to iterate `0..N-1` and fixed loop variables to be per-iteration (no more accidental closure capture bugs). Go 1.23 added ranging over iterator functions. PHP `foreach` works on arrays and `Traversable` objects.
 
 > **Sources:**
 > - **Go:** [A Tour of Go — For](https://go.dev/tour/flowcontrol/1) · [Effective Go — For](https://go.dev/doc/effective_go#for)
@@ -1201,6 +1250,11 @@ class C {
 $c = new C();
 echo $c->hello();      // 'A'
 echo $c->helloFromB(); // 'B'
+
+// Constants in traits (PHP 8.2+)
+trait HasVersion {
+    public const string VERSION = '1.0'; // typed constant (PHP 8.3+)
+}
 
 // Abstract method in trait — enforces implementation by using class
 trait Validatable {
@@ -2584,15 +2638,25 @@ foreach ($ref->getMethods() as $method) {
 
 // Built-in PHP attributes
 class MyService {
-    #[\Override]          // PHP 8.3 — warns if method doesn't override parent
+    #[\Override]   // PHP 8.3 — compile-time check: method must override a parent method
     public function handle(): void {}
 }
 
-#[\AllowDynamicProperties] // PHP 8.2 — opt-in to dynamic properties
+#[\AllowDynamicProperties] // PHP 8.2 — opt-in to dynamic properties (deprecated by default in 8.2)
 class LegacyModel {}
 
-function deprecated(): void {
-    // No built-in Deprecated attribute yet — use docblock @deprecated
+// PHP 8.2 — redact sensitive values in stack traces
+function login(#[\SensitiveParameter] string $password): void {
+    // $password is hidden in backtraces / error logs
+}
+
+// PHP 8.4 — mark as deprecated with a message shown at call site
+#[\Deprecated("Use newMethod() instead", since: "2.0")]
+function oldMethod(): void {}
+
+class MyClass {
+    #[\Deprecated("Use $newProp instead")]
+    public string $oldProp = '';
 }
 ```
 
@@ -2697,10 +2761,22 @@ readonly class Coordinate {
     ) {}
 }
 
-// Cloning with changes — use with() (PHP 8.4) or clone + initialization trick
-$moved = clone $user;
-// Directly re-assigning a readonly in a cloned object is not allowed
-// Use a named constructor pattern:
+// PHP 8.3+: readonly properties CAN be reinitialized inside __clone()
+class UserV2 {
+    public function __construct(
+        public readonly int $id,
+        public readonly string $name,
+    ) {}
+
+    public function withName(string $name): static {
+        $clone = clone $this;
+        // Legal in PHP 8.3+ — __clone() may reinitialize readonly props
+        $clone->name = $name;
+        return $clone;
+    }
+}
+
+// Named constructor pattern (works on all PHP 8.1+ versions)
 class Money {
     public function __construct(
         public readonly int $amount,
@@ -2767,6 +2843,10 @@ class User {
     public function getName(): string { return $this->name; }
 }
 
+// PHP 8.4 — chainable new: constructor calls are dereferenceable without extra parentheses
+$result = new MyClass()->method()->property;       // PHP 8.4+
+// Before PHP 8.4 required: (new MyClass())->method()->property
+
 // Can mix promoted and non-promoted
 class ProductService {
     private array $cache = [];
@@ -2800,6 +2880,134 @@ func NewUser(id int, name, email string) User {
 
 ---
 
+## Property Hooks (PHP 8.4)
+
+PHP 8.4 adds `get` and `set` hooks on object properties — computed/virtual properties without explicit getter/setter methods. Go has no equivalent; use methods.
+
+```php
+<?php
+class User {
+    // Virtual property — no backing storage, computed on read
+    public string $fullName {
+        get => $this->firstName . ' ' . $this->lastName;
+    }
+
+    // Write hook — transform value before storing
+    public string $firstName {
+        set => ucfirst(strtolower($value)); // $value is the assigned value
+    }
+
+    // Write hook with validation
+    public string $lastName {
+        set {
+            if (strlen($value) < 2) {
+                throw new \InvalidArgumentException("Too short");
+            }
+            $this->lastName = $value; // assign to backing storage explicitly
+        }
+    }
+
+    // Both hooks on one property
+    private int $_age = 0;
+    public int $age {
+        get => $this->_age;
+        set {
+            if ($value < 0) throw new \InvalidArgumentException("Negative age");
+            $this->_age = $value;
+        }
+    }
+
+    public function __construct(string $firstName, string $lastName) {
+        $this->firstName = $firstName;
+        $this->lastName  = $lastName;
+    }
+}
+
+$u = new User('alice', 'smith');
+echo $u->firstName;  // 'Alice' — set hook transformed it
+echo $u->fullName;   // 'Alice Smith' — virtual, computed on read
+$u->age = -1;        // throws InvalidArgumentException
+
+// Hooks work with readonly too — readonly + set hook = write-once with validation
+class Point {
+    public function __construct(
+        public readonly float $x {
+            set => round($value, 2); // round on initialization
+        },
+        public readonly float $y {
+            set => round($value, 2);
+        },
+    ) {}
+}
+
+$p = new Point(1.2345, 2.9876);
+echo $p->x; // 1.23
+```
+
+> **Sources:**
+> - **PHP:** [PHP Manual — Property hooks](https://www.php.net/manual/en/language.oop5.property-hooks.php) · [PHP 8.4 Migration](https://www.php.net/manual/en/migration84.new-features.php)
+
+---
+
+## Asymmetric Visibility (PHP 8.4)
+
+PHP 8.4 allows separate visibility for reading (`get`) and writing (`set`) a property. Go has no keyword equivalent — use unexported fields with exported getter methods.
+
+```php
+<?php
+class Book {
+    public function __construct(
+        // Public read, private write — only this class can change $title
+        public private(set) string $title,
+
+        // Public read, protected write — this class and subclasses can change $author
+        public protected(set) string $author,
+
+        // Protected read, private write
+        protected private(set) int $pubYear,
+    ) {}
+
+    public function republish(int $year): void {
+        $this->pubYear = $year; // OK — within class
+    }
+}
+
+$book = new Book('Dune', 'Herbert', 1965);
+echo $book->title;   // OK — public read
+$book->title = 'X';  // Fatal Error — private set
+
+class SpecialBook extends Book {
+    public function rename(string $author): void {
+        $this->author = $author; // OK — protected set, accessible in subclass
+    }
+}
+
+// Rules:
+// - set visibility must be equal or more restrictive than get visibility
+// - public private(set) is equivalent to just private(set)
+// - private(set) implies final — cannot be redeclared in child classes
+// - Only typed properties may have asymmetric visibility
+```
+
+**Go equivalent:**
+```go
+type Book struct {
+    title   string // unexported — read via getter, write via method
+    author  string
+    pubYear int
+}
+
+func (b Book) Title()   string { return b.title }
+func (b Book) Author()  string { return b.author }
+
+func (b *Book) Republish(year int) { b.pubYear = year }
+```
+
+> **Sources:**
+> - **PHP:** [PHP Manual — Asymmetric visibility](https://www.php.net/manual/en/language.oop5.visibility.php) · [PHP 8.4 Migration](https://www.php.net/manual/en/migration84.new-features.php)
+
+---
+
 ## Quick Reference: Go vs PHP at a Glance
 
 | Feature | Go | PHP 8.x |
@@ -2811,7 +3019,7 @@ func NewUser(id int, name, email string) User {
 | Interfaces | Structural (implicit) | Nominal (explicit `implements`) |
 | Generics | Yes (Go 1.18+) | Doc-comment only (PHPStan/Psalm) |
 | Error handling | Return values | Exceptions |
-| Concurrency | Goroutines + channels (built-in) | Fibers (cooperative), Swoole (coroutines), pcntl (processes) |
+| Concurrency | Goroutines + channels (built-in) | Fibers (cooperative, 8.1+), Swoole (coroutines), pcntl (processes) |
 | Memory | Garbage collected (GC) | Reference counting + cycle collector |
 | Null safety | `nil` for reference types | `null` type, `??`, `?->` operators |
 | Closures | Auto-capture by reference | Explicit `use()` or auto-capture `fn` (by value) |
@@ -2821,6 +3029,14 @@ func NewUser(id int, name, email string) User {
 | String indexing | Byte offset | Byte offset (`mb_*` for Unicode) |
 | Pointers | Yes (`*T`, `&x`, `*p`) | No; `&$ref` for references |
 | Attributes/Tags | Struct field tags (strings) | Native `#[Attribute]` (PHP 8.0+) |
-| Named arguments | No (only struct literals) | Yes (`fn(name: value)`) |
-| Readonly fields | No keyword; convention/unexported | `readonly` property/class (PHP 8.1+) |
+| Named arguments | No (only struct literals) | Yes (`fn(name: value)`) (PHP 8.0+) |
+| Readonly fields | No keyword; convention/unexported | `readonly` property/class (PHP 8.1/8.2+) |
+| Property hooks | No | `get`/`set` hooks on properties (PHP 8.4+) |
+| Asymmetric visibility | No (unexported fields + getters) | `public private(set)` etc. (PHP 8.4+) |
+| `never` return type | No | Yes (PHP 8.1+) |
+| `true`/`false` types | No | Standalone types (PHP 8.2+) |
+| DNF types | No | `(A&B)\|C` (PHP 8.2+) |
+| Typed constants | N/A (all consts typed) | Class/trait/enum const types (PHP 8.3+) |
+| Range over int | `for i := range N` (Go 1.22+) | `for ($i=0; $i<N; $i++)` |
+| `min`/`max` built-in | Yes (Go 1.21+, any ordered type) | Yes (built-in functions) |
 # go-php-comparaison
