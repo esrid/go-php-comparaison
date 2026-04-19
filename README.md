@@ -1738,6 +1738,20 @@ try {
     echo "Anything: " . $e->getMessage();
 }
 
+// throw as expression (PHP 8.0) — use throw where only expressions are allowed
+$value  = $input ?? throw new \InvalidArgumentException("Input required");
+$result = $validated ? compute() : throw new \LogicException("Unexpected state");
+$fn     = fn(int $x) => $x >= 0 ? $x : throw new \RangeException("Negative");
+
+// Non-capturing catch (PHP 8.0) — omit variable when you don't need it
+try {
+    riskyOperation();
+} catch (\RuntimeException) {  // no $e variable
+    echo "Runtime error\n";
+} catch (\Throwable) {
+    echo "Unhandled error\n";
+}
+
 // Result pattern (popular with libraries like neverthrow)
 // Not built-in, but achievable:
 class Result {
@@ -2049,6 +2063,11 @@ $obj instanceof MyInterface;
 get_debug_type(new \stdClass()); // "stdClass"
 get_debug_type(null);            // "null"
 get_debug_type(1.5);             // "float"
+
+// $obj::class (PHP 8.0) — get class name from an object instance
+$obj = new \stdClass();
+echo $obj::class;      // "stdClass"  — PHP 8.0+
+echo get_class($obj);  // "stdClass"  — old way, still works
 
 // String to number (PHP 8 strict)
 $n = (int) "42abc"; // 42 with a notice in PHP 8
@@ -2467,6 +2486,14 @@ $obj = new stdClass();
 $weak = WeakReference::create($obj);
 unset($obj);
 var_dump($weak->get()); // NULL — object was freed
+
+// WeakMap (PHP 8.0) — object-keyed map; entry removed when key is garbage collected
+$map = new WeakMap();
+$obj = new \stdClass();
+$map[$obj] = 'cached result';
+echo count($map); // 1
+unset($obj);
+echo count($map); // 0 — entry auto-removed, no memory leak
 ```
 
 > **Key difference:** Go uses a concurrent tri-color mark-and-sweep GC; allocation is automatic, deallocation is automatic, and you never call `free`. PHP uses reference counting with a cycle collector — most objects are freed immediately when their refcount hits zero, making memory management more predictable frame-to-frame but susceptible to cycles.
